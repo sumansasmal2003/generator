@@ -1,19 +1,18 @@
-// src/components/Gallery.tsx
 "use client";
 
 import { useState, useEffect, useRef } from "react";
 import { IPhoto } from "@/models/Photo";
 import PhotoCard from "./PhotoCard";
-import {
-  X, Search, ChevronLeft, ChevronRight, Copy, Check, Share2, Heart, Download
+import { 
+  X, Search, ChevronLeft, ChevronRight, Copy, Check, Share2, Heart, Download 
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
 import cloudinaryLoader from "@/lib/cloudinaryLoader";
 
-interface ITag {
-  _id: string;
-  count: number;
+interface ITag { 
+  _id: string; 
+  count: number; 
 }
 
 export default function Gallery() {
@@ -23,7 +22,7 @@ export default function Gallery() {
   const [selectedPhoto, setSelectedPhoto] = useState<IPhoto | null>(null);
   const [copied, setCopied] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
-
+  
   // Custom Context Menu State
   const [contextMenu, setContextMenu] = useState<{ show: boolean; x: number; y: number } | null>(null);
 
@@ -32,7 +31,7 @@ export default function Gallery() {
   const [selectedTag, setSelectedTag] = useState("");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-
+  
   // Favorites
   const [favorites, setFavorites] = useState<string[]>([]);
   const [viewFavorites, setViewFavorites] = useState(false);
@@ -84,15 +83,15 @@ export default function Gallery() {
       setLoading(true);
       try {
         let url = `/api/photos?page=${page}&limit=${ITEMS_PER_PAGE}`;
-
+        
         if (viewFavorites) {
             if (favorites.length === 0) {
-                setPhotos([]);
-                setLoading(false);
+                setPhotos([]); 
+                setLoading(false); 
                 return;
             }
             url += `&ids=${favorites.join(",")}`;
-        }
+        } 
         else {
             if (selectedTag) url += `&tag=${encodeURIComponent(selectedTag)}`;
             else if (debouncedSearch) url += `&search=${encodeURIComponent(debouncedSearch)}`;
@@ -102,7 +101,7 @@ export default function Gallery() {
         const data = await res.json();
         setPhotos(data.data);
         setTotalPages(data.meta.totalPages);
-
+        
         if (page > 1 && scrollContainerRef.current) {
             scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
         }
@@ -123,7 +122,8 @@ export default function Gallery() {
     if (favorites.includes(id)) {
         newFavs = favorites.filter(fav => fav !== id);
         if (viewFavorites) {
-            setPhotos(prev => prev.filter(p => (p._id as string) !== id));
+            // FIX: Use double casting (unknown -> string) to fix Build Error
+            setPhotos(prev => prev.filter(p => (p._id as unknown as string) !== id));
         }
     } else {
         newFavs = [...favorites, id];
@@ -180,9 +180,9 @@ export default function Gallery() {
     } else {
       try {
         await navigator.clipboard.writeText(photo.imageUrl);
-        setCopied(true);
+        setCopied(true); 
         setTimeout(() => setCopied(false), 2000);
-        alert("Link copied to clipboard!");
+        alert("Link copied to clipboard!"); 
       } catch (err) { console.error(err); }
     }
   };
@@ -190,17 +190,17 @@ export default function Gallery() {
   // --- NEW: MODAL CONTEXT MENU HANDLER ---
   const handleModalContextMenu = (e: React.MouseEvent) => {
     e.preventDefault(); // Stop default menu
-    e.stopPropagation();
+    e.stopPropagation(); 
     setContextMenu({ show: true, x: e.clientX, y: e.clientY });
   };
 
   return (
     <div className="h-full relative flex flex-col">
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto custom-scrollbar pb-32">
-
+        
         {/* HERO */}
         <div className="max-w-7xl mx-auto px-6 lg:px-12 pt-16 pb-8">
-            <motion.div
+            <motion.div 
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="text-center max-w-2xl mx-auto space-y-6"
@@ -208,7 +208,7 @@ export default function Gallery() {
                 <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight text-gray-900">
                     Explore the <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600">Artificial</span>.
                 </h2>
-
+                
                 <div className="relative group max-w-xl mx-auto">
                     <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                         <Search className="h-5 w-5 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
@@ -241,7 +241,7 @@ export default function Gallery() {
                     }}
                     className={`px-4 py-1.5 rounded-full text-sm font-bold transition-all border flex items-center gap-2
                         ${viewFavorites
-                            ? "bg-red-500 text-white border-red-500 shadow-md transform scale-105"
+                            ? "bg-red-500 text-white border-red-500 shadow-md transform scale-105" 
                             : "bg-white text-gray-600 border-gray-200 hover:border-red-300 hover:text-red-500"}
                     `}
                 >
@@ -264,8 +264,8 @@ export default function Gallery() {
                             setPage(1);
                         }}
                         className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all border
-                            ${selectedTag === tag._id
-                                ? "bg-black text-white border-black shadow-md transform scale-105"
+                            ${selectedTag === tag._id 
+                                ? "bg-black text-white border-black shadow-md transform scale-105" 
                                 : "bg-white text-gray-600 border-gray-200 hover:border-gray-400 hover:bg-gray-50"}
                         `}
                     >
@@ -288,13 +288,14 @@ export default function Gallery() {
             ) : (
                 <div className="columns-1 sm:columns-2 md:columns-3 lg:columns-4 xl:columns-5 gap-6 space-y-6">
                     {photos.map((photo, index) => (
-                    <div key={photo._id as string} className="break-inside-avoid">
-                        <PhotoCard
-                            photo={photo}
-                            index={index}
-                            onView={setSelectedPhoto}
-                            isFavorite={favorites.includes(photo._id as string)}
-                            onToggleFavorite={(e) => toggleFavorite(e, photo._id as string)}
+                    <div key={photo._id as unknown as string} className="break-inside-avoid">
+                        <PhotoCard 
+                            photo={photo} 
+                            index={index} 
+                            onView={setSelectedPhoto} 
+                            // FIX: double cast
+                            isFavorite={favorites.includes(photo._id as unknown as string)}
+                            onToggleFavorite={(e) => toggleFavorite(e, photo._id as unknown as string)}
                         />
                     </div>
                     ))}
@@ -354,11 +355,11 @@ export default function Gallery() {
               onClick={(e) => e.stopPropagation()}
             >
                {/* 1. Modal Image Container with Right Click Listener */}
-               <div
+               <div 
                  className="lg:w-3/4 bg-gray-100 flex items-center justify-center relative overflow-hidden cursor-context-menu"
-                 onContextMenu={handleModalContextMenu} // <--- ATTACHED HERE
+                 onContextMenu={handleModalContextMenu}
                >
-                 <div
+                 <div 
                     className="absolute inset-0 z-0 opacity-50"
                     style={{
                         backgroundImage: selectedPhoto.blurDataUrl ? `url("${selectedPhoto.blurDataUrl}")` : undefined,
@@ -369,11 +370,11 @@ export default function Gallery() {
                     }}
                  />
                  <div className="relative w-full h-full z-10 p-4 lg:p-12">
-                    <Image
+                    <Image 
                         loader={cloudinaryLoader}
-                        src={selectedPhoto.imageUrl}
-                        alt={selectedPhoto.title}
-                        fill
+                        src={selectedPhoto.imageUrl} 
+                        alt={selectedPhoto.title} 
+                        fill 
                         placeholder={selectedPhoto.blurDataUrl ? "blur" : "empty"}
                         blurDataURL={selectedPhoto.blurDataUrl}
                         className="object-contain drop-shadow-2xl"
@@ -381,7 +382,7 @@ export default function Gallery() {
                     />
                  </div>
                </div>
-
+               
                <div className="lg:w-1/4 p-8 border-l border-gray-100 flex flex-col bg-white">
                   <div>
                     <h2 className="text-2xl font-bold mb-2 text-gray-900 leading-tight">{selectedPhoto.title}</h2>
@@ -390,7 +391,7 @@ export default function Gallery() {
                         <span className="text-xs text-gray-400">{new Date(selectedPhoto.createdAt).toLocaleDateString()}</span>
                     </div>
                   </div>
-
+                  
                   <div className="flex-1 overflow-y-auto mb-6 pr-2 custom-scrollbar">
                      <div className="flex items-center justify-between mb-2">
                         <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Prompt</h4>
@@ -403,7 +404,7 @@ export default function Gallery() {
                             {selectedPhoto.prompt || "No prompt details available."}
                         </p>
                      </div>
-
+                     
                      {selectedPhoto.tags && selectedPhoto.tags.length > 0 && (
                         <div className="mt-6">
                             <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Tags</h4>
@@ -415,9 +416,9 @@ export default function Gallery() {
                         </div>
                      )}
                   </div>
-
+                  
                   <div className="flex gap-3 mt-auto">
-                      <button
+                      <button 
                         onClick={() => handleDownload(selectedPhoto)}
                         disabled={isDownloading}
                         className="flex-1 bg-black text-white py-4 rounded-xl font-bold text-lg hover:bg-gray-800 transition shadow-xl hover:shadow-2xl flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-wait"
@@ -440,29 +441,30 @@ export default function Gallery() {
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 transition={{ duration: 0.1 }}
-                style={{
-                    position: 'fixed',
-                    top: contextMenu.y,
+                style={{ 
+                    position: 'fixed', 
+                    top: contextMenu.y, 
                     left: contextMenu.x,
-                    zIndex: 9999
+                    zIndex: 9999 
                 }}
                 className="bg-white/95 backdrop-blur-xl border border-gray-100 rounded-xl shadow-2xl p-1.5 min-w-[180px] flex flex-col gap-1 overflow-hidden"
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()} 
             >
                 {/* 1. Like Option */}
-                <button
+                <button 
                     onClick={(e) => {
-                        toggleFavorite(e, selectedPhoto._id as string);
+                        // FIX: Double cast
+                        toggleFavorite(e, selectedPhoto._id as unknown as string);
                         setContextMenu(null);
                     }}
                     className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-gray-100 transition-colors flex items-center gap-3 text-sm font-medium text-gray-700"
                 >
-                    <Heart size={16} className={favorites.includes(selectedPhoto._id as string) ? "fill-red-500 text-red-500" : "text-gray-500"} />
-                    {favorites.includes(selectedPhoto._id as string) ? "Remove from Saved" : "Save to Favorites"}
+                    <Heart size={16} className={favorites.includes(selectedPhoto._id as unknown as string) ? "fill-red-500 text-red-500" : "text-gray-500"} />
+                    {favorites.includes(selectedPhoto._id as unknown as string) ? "Remove from Saved" : "Save to Favorites"}
                 </button>
-
+                
                 {/* 2. Share Option */}
-                <button
+                <button 
                     onClick={() => {
                         handleShare(selectedPhoto);
                         setContextMenu(null);
@@ -476,7 +478,7 @@ export default function Gallery() {
                 <div className="h-px bg-gray-200 mx-1 my-0.5" />
 
                 {/* 3. Download Option */}
-                <button
+                <button 
                     onClick={() => {
                         handleDownload(selectedPhoto);
                         setContextMenu(null);
