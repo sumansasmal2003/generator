@@ -3,12 +3,13 @@
 import { useState, useEffect, useRef } from "react";
 import { IPhoto } from "@/models/Photo";
 import PhotoCard from "./PhotoCard";
-import { 
-  X, Search, ChevronLeft, ChevronRight, Copy, Check, Share2, Heart, Download 
+import {
+  X, Search, ChevronLeft, ChevronRight, Copy, Check, Share2, Heart, Download, Sparkles, Palette
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
 import cloudinaryLoader from "@/lib/cloudinaryLoader";
+import ColorThief from "colorthief";
 
 interface ITag { 
   _id: string; 
@@ -19,8 +20,21 @@ export default function Gallery() {
   // --- STATE MANAGEMENT ---
   const [photos, setPhotos] = useState<IPhoto[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Modal State
   const [selectedPhoto, setSelectedPhoto] = useState<IPhoto | null>(null);
+
+  // Related Photos State
+  const [relatedPhotos, setRelatedPhotos] = useState<IPhoto[]>([]);
+  const [loadingRelated, setLoadingRelated] = useState(false);
+
+  // Palette State
+  const [palette, setPalette] = useState<string[]>([]);
+  const [loadingPalette, setLoadingPalette] = useState(false);
+
+  // UI Feedback State
   const [copied, setCopied] = useState(false);
+  const [copiedColor, setCopiedColor] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   
   // Custom Context Menu State
@@ -57,7 +71,6 @@ export default function Gallery() {
     };
     fetchTags();
 
-    // GLOBAL CLICK LISTENER TO CLOSE CONTEXT MENU
     const closeMenu = () => setContextMenu(null);
     window.addEventListener("click", closeMenu);
     window.addEventListener("scroll", closeMenu);
@@ -115,14 +128,70 @@ export default function Gallery() {
     fetchPhotos();
   }, [page, debouncedSearch, selectedTag, viewFavorites]);
 
-  // --- 4. HANDLERS ---
+  // --- 4. FETCH RELATED & PALETTE ---
+  useEffect(() => {
+    if (!selectedPhoto) return;
+
+    // A. Fetch Related
+    const fetchRelated = async () => {
+        setLoadingRelated(true);
+        try {
+            const tagsQuery = selectedPhoto.tags ? selectedPhoto.tags.join(",") : "";
+            const id = selectedPhoto._id as unknown as string;
+
+            const res = await fetch(`/api/photos/related?id=${id}&tags=${encodeURIComponent(tagsQuery)}`);
+            const data = await res.json();
+            setRelatedPhotos(data.data || []);
+        } catch (error) {
+            console.error("Failed to load related", error);
+        } finally {
+            setLoadingRelated(false);
+        }
+    };
+
+    // B. Extract Palette
+    const extractColors = async () => {
+        setLoadingPalette(true);
+        setPalette([]);
+        try {
+            const img = new window.Image();
+            img.crossOrigin = "Anonymous";
+            img.src = selectedPhoto.imageUrl;
+
+            img.onload = () => {
+                try {
+                    const colorThief = new ColorThief();
+                    const result = colorThief.getPalette(img, 5);
+                    if (result) {
+                        const hexColors = result.map((rgb: number[]) =>
+                            `#${rgb[0].toString(16).padStart(2, '0')}${rgb[1].toString(16).padStart(2, '0')}${rgb[2].toString(16).padStart(2, '0')}`
+                        );
+                        setPalette(hexColors);
+                    }
+                } catch (e) {
+                    console.error("Color extraction error", e);
+                } finally {
+                    setLoadingPalette(false);
+                }
+            };
+            img.onerror = () => setLoadingPalette(false);
+        } catch (error) {
+            console.error("Failed to load image for palette", error);
+            setLoadingPalette(false);
+        }
+    };
+
+    fetchRelated();
+    extractColors();
+  }, [selectedPhoto]);
+
+  // --- HANDLERS ---
   const toggleFavorite = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     let newFavs;
     if (favorites.includes(id)) {
         newFavs = favorites.filter(fav => fav !== id);
         if (viewFavorites) {
-            // FIX: Use double casting (unknown -> string) to fix Build Error
             setPhotos(prev => prev.filter(p => (p._id as unknown as string) !== id));
         }
     } else {
@@ -168,6 +237,14 @@ export default function Gallery() {
     } catch (err) { console.error(err); }
   };
 
+  const handleCopyColor = async (color: string) => {
+    try {
+        await navigator.clipboard.writeText(color);
+        setCopiedColor(color);
+        setTimeout(() => setCopiedColor(null), 2000);
+    } catch (err) { console.error(err); }
+  };
+
   const handleShare = async (photo: IPhoto) => {
     if (navigator.share) {
       try {
@@ -187,10 +264,9 @@ export default function Gallery() {
     }
   };
 
-  // --- NEW: MODAL CONTEXT MENU HANDLER ---
   const handleModalContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault(); // Stop default menu
-    e.stopPropagation(); 
+    e.preventDefault();
+    e.stopPropagation();
     setContextMenu({ show: true, x: e.clientX, y: e.clientY });
   };
 
@@ -208,7 +284,6 @@ export default function Gallery() {
                 <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight text-gray-900">
                     Explore the <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600">Artificial</span>.
                 </h2>
-                
                 <div className="relative group max-w-xl mx-auto">
                     <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                         <Search className="h-5 w-5 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
@@ -248,9 +323,7 @@ export default function Gallery() {
                     <Heart size={14} className={viewFavorites ? "fill-white" : ""} />
                     Saved <span className="opacity-70 text-xs ml-1">{favorites.length}</span>
                 </button>
-
                 <div className="w-px h-6 bg-gray-300 mx-2 self-center hidden sm:block" />
-
                 {availableTags.map((tag) => (
                     <button
                         key={tag._id}
@@ -289,11 +362,10 @@ export default function Gallery() {
                 <div className="columns-1 sm:columns-2 md:columns-3 lg:columns-4 xl:columns-5 gap-6 space-y-6">
                     {photos.map((photo, index) => (
                     <div key={photo._id as unknown as string} className="break-inside-avoid">
-                        <PhotoCard 
-                            photo={photo} 
-                            index={index} 
-                            onView={setSelectedPhoto} 
-                            // FIX: double cast
+                        <PhotoCard
+                            photo={photo}
+                            index={index}
+                            onView={setSelectedPhoto}
                             isFavorite={favorites.includes(photo._id as unknown as string)}
                             onToggleFavorite={(e) => toggleFavorite(e, photo._id as unknown as string)}
                         />
@@ -301,21 +373,10 @@ export default function Gallery() {
                     ))}
                 </div>
             )}
-
             {!loading && photos.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-                {viewFavorites ? (
-                    <>
-                        <Heart size={48} className="mb-4 opacity-20" />
-                        <p className="text-lg font-medium">No saved photos yet.</p>
-                    </>
-                ) : (
-                    <>
-                        <Search size={48} className="mb-4 opacity-20" />
-                        <p className="text-lg font-medium">No results found.</p>
-                    </>
-                )}
-            </div>
+                <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+                    <p className="text-lg font-medium">No results found.</p>
+                </div>
             )}
         </div>
       </div>
@@ -343,7 +404,7 @@ export default function Gallery() {
             className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
             onClick={() => setSelectedPhoto(null)}
           >
-            <div className="absolute top-6 right-6 z-50">
+            <div className="absolute top-4 right-4 z-50">
                <button className="bg-white/10 hover:bg-white/20 text-white p-3 rounded-full transition-colors" onClick={() => setSelectedPhoto(null)}>
                  <X size={24} />
                </button>
@@ -351,12 +412,12 @@ export default function Gallery() {
              <motion.div
               initial={{ scale: 0.95, y: 20 }}
               animate={{ scale: 1, y: 0 }}
-              className="max-w-7xl w-full h-[90vh] bg-white rounded-2xl overflow-hidden flex flex-col lg:flex-row shadow-2xl"
+              className="max-w-7xl w-full h-[85vh] lg:h-[90vh] bg-white rounded-2xl overflow-hidden flex flex-col lg:flex-row shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
-               {/* 1. Modal Image Container with Right Click Listener */}
-               <div 
-                 className="lg:w-3/4 bg-gray-100 flex items-center justify-center relative overflow-hidden cursor-context-menu"
+               {/* 1. IMAGE SECTION */}
+               <div
+                 className="basis-[40%] min-h-[250px] lg:basis-3/4 bg-gray-100 flex items-center justify-center relative overflow-hidden cursor-context-menu flex-shrink-0"
                  onContextMenu={handleModalContextMenu}
                >
                  <div 
@@ -382,32 +443,74 @@ export default function Gallery() {
                     />
                  </div>
                </div>
-               
-               <div className="lg:w-1/4 p-8 border-l border-gray-100 flex flex-col bg-white">
-                  <div>
-                    <h2 className="text-2xl font-bold mb-2 text-gray-900 leading-tight">{selectedPhoto.title}</h2>
-                    <div className="flex items-center gap-2 mb-8">
+
+               {/* 2. DETAILS SECTION */}
+               <div className="flex-1 lg:basis-1/4 p-6 lg:p-8 border-t lg:border-t-0 lg:border-l border-gray-100 flex flex-col bg-white overflow-hidden">
+                  <div className="flex-shrink-0">
+                    <h2 className="text-xl lg:text-2xl font-bold mb-2 text-gray-900 leading-tight">{selectedPhoto.title}</h2>
+                    <div className="flex items-center gap-2 mb-6">
                         <span className="px-2 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded uppercase tracking-wide">AI Generated</span>
                         <span className="text-xs text-gray-400">{new Date(selectedPhoto.createdAt).toLocaleDateString()}</span>
                     </div>
                   </div>
-                  
-                  <div className="flex-1 overflow-y-auto mb-6 pr-2 custom-scrollbar">
+
+                  {/* Scrollable Content */}
+                  <div className="flex-1 overflow-y-auto mb-4 pr-2 custom-scrollbar">
+
+                     {/* --- COLOR PALETTE SECTION --- */}
+                     {(loadingPalette || palette.length > 0) && (
+                        <div className="mb-6">
+                             <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                                <Palette size={12} /> Color Palette
+                             </h4>
+
+                             {loadingPalette ? (
+                                /* Skeleton Loader for Palette */
+                                <div className="flex gap-2">
+                                    {[...Array(5)].map((_, i) => (
+                                        <div key={i} className="w-8 h-8 rounded-full bg-gray-200 animate-pulse" />
+                                    ))}
+                                </div>
+                             ) : (
+                                /* Actual Palette */
+                                <div className="flex gap-2">
+                                    {palette.map((color, i) => (
+                                        <button
+                                            key={i}
+                                            onClick={() => handleCopyColor(color)}
+                                            className="group relative w-8 h-8 rounded-full border border-gray-200 shadow-sm transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                                            style={{ backgroundColor: color }}
+                                            title={`Copy ${color}`}
+                                        >
+                                            {copiedColor === color && (
+                                                <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-full">
+                                                    <Check size={12} className="text-white" />
+                                                </div>
+                                            )}
+                                            <span className="sr-only">Copy color {color}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                             )}
+                        </div>
+                     )}
+
+                     {/* Prompt */}
                      <div className="flex items-center justify-between mb-2">
                         <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Prompt</h4>
                         <button onClick={() => handleCopyPrompt(selectedPhoto.prompt)} className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-black transition-colors bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded-md">
                             {copied ? <><Check size={12} className="text-green-600" /><span className="text-green-600">Copied!</span></> : <><Copy size={12} /><span>Copy</span></>}
                         </button>
                      </div>
-                     <div className="relative group cursor-pointer" onClick={() => handleCopyPrompt(selectedPhoto.prompt)}>
+                     <div className="relative group cursor-pointer mb-6" onClick={() => handleCopyPrompt(selectedPhoto.prompt)}>
                         <p className="text-sm text-gray-600 leading-relaxed font-mono bg-gray-50 p-4 rounded-lg border border-gray-100 hover:border-gray-300 transition-colors">
                             {selectedPhoto.prompt || "No prompt details available."}
                         </p>
                      </div>
-                     
+
+                     {/* Tags */}
                      {selectedPhoto.tags && selectedPhoto.tags.length > 0 && (
-                        <div className="mt-6">
-                            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Tags</h4>
+                        <div className="mb-8">
                             <div className="flex flex-wrap gap-2">
                                 {selectedPhoto.tags.map(tag => (
                                     <span key={tag} className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-md">#{tag}</span>
@@ -415,17 +518,55 @@ export default function Gallery() {
                             </div>
                         </div>
                      )}
+
+                     {/* Related Images */}
+                     <div className="mt-8 border-t border-gray-100 pt-6">
+                        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                            <Sparkles size={12} className="text-yellow-500" /> Related Styles
+                        </h4>
+
+                        {loadingRelated ? (
+                            <div className="grid grid-cols-3 gap-2">
+                                {[1,2,3].map(i => <div key={i} className="aspect-square bg-gray-100 rounded-lg animate-pulse" />)}
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-3 gap-2">
+                                {relatedPhotos.map((related) => (
+                                    <div
+                                        key={related._id as unknown as string}
+                                        className="relative aspect-square rounded-lg overflow-hidden cursor-pointer group bg-gray-100"
+                                        onClick={() => setSelectedPhoto(related)}
+                                    >
+                                        <Image
+                                            loader={cloudinaryLoader}
+                                            src={related.imageUrl}
+                                            alt={related.title}
+                                            fill
+                                            className="object-cover transition-transform duration-500 group-hover:scale-110"
+                                            sizes="150px"
+                                            placeholder={related.blurDataUrl ? "blur" : "empty"}
+                                            blurDataURL={related.blurDataUrl}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        {!loadingRelated && relatedPhotos.length === 0 && (
+                            <p className="text-xs text-gray-400 italic">No related images found.</p>
+                        )}
+                     </div>
                   </div>
-                  
-                  <div className="flex gap-3 mt-auto">
-                      <button 
+
+                  {/* Actions */}
+                  <div className="flex gap-3 mt-auto shrink-0 pt-4 bg-white border-t border-gray-100">
+                      <button
                         onClick={() => handleDownload(selectedPhoto)}
                         disabled={isDownloading}
-                        className="flex-1 bg-black text-white py-4 rounded-xl font-bold text-lg hover:bg-gray-800 transition shadow-xl hover:shadow-2xl flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-wait"
+                        className="flex-1 bg-black text-white py-3 lg:py-4 rounded-xl font-bold text-base lg:text-lg hover:bg-gray-800 transition shadow-xl hover:shadow-2xl flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-wait"
                       >
                         {isDownloading ? "Downloading..." : "Download"}
                       </button>
-                      <button onClick={() => handleShare(selectedPhoto)} className="w-16 bg-gray-100 text-gray-900 rounded-xl font-bold text-lg hover:bg-gray-200 transition flex items-center justify-center border border-gray-200 hover:border-gray-300" title="Share"><Share2 size={24} /></button>
+                      <button onClick={() => handleShare(selectedPhoto)} className="w-14 lg:w-16 bg-gray-100 text-gray-900 rounded-xl font-bold text-lg hover:bg-gray-200 transition flex items-center justify-center border border-gray-200 hover:border-gray-300" title="Share"><Share2 size={24} /></button>
                   </div>
                </div>
             </motion.div>
@@ -433,7 +574,7 @@ export default function Gallery() {
         )}
       </AnimatePresence>
 
-      {/* --- CUSTOM CONTEXT MENU (Global for Modal) --- */}
+      {/* --- CUSTOM CONTEXT MENU --- */}
       <AnimatePresence>
         {contextMenu && selectedPhoto && (
             <motion.div
@@ -450,10 +591,8 @@ export default function Gallery() {
                 className="bg-white/95 backdrop-blur-xl border border-gray-100 rounded-xl shadow-2xl p-1.5 min-w-[180px] flex flex-col gap-1 overflow-hidden"
                 onClick={(e) => e.stopPropagation()} 
             >
-                {/* 1. Like Option */}
-                <button 
+                <button
                     onClick={(e) => {
-                        // FIX: Double cast
                         toggleFavorite(e, selectedPhoto._id as unknown as string);
                         setContextMenu(null);
                     }}
@@ -462,9 +601,8 @@ export default function Gallery() {
                     <Heart size={16} className={favorites.includes(selectedPhoto._id as unknown as string) ? "fill-red-500 text-red-500" : "text-gray-500"} />
                     {favorites.includes(selectedPhoto._id as unknown as string) ? "Remove from Saved" : "Save to Favorites"}
                 </button>
-                
-                {/* 2. Share Option */}
-                <button 
+
+                <button
                     onClick={() => {
                         handleShare(selectedPhoto);
                         setContextMenu(null);
@@ -477,8 +615,7 @@ export default function Gallery() {
 
                 <div className="h-px bg-gray-200 mx-1 my-0.5" />
 
-                {/* 3. Download Option */}
-                <button 
+                <button
                     onClick={() => {
                         handleDownload(selectedPhoto);
                         setContextMenu(null);
