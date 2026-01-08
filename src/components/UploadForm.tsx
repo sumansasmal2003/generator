@@ -1,9 +1,10 @@
 // src/components/UploadForm.tsx
 "use client";
 
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Upload, X, Check, Image as ImageIcon, Sparkles, Trash2, FileText, Tag } from "lucide-react";
+import { Upload, Check, Image as ImageIcon, Sparkles, Trash2, FileText, Tag } from "lucide-react";
+import { compressImage } from "@/lib/compress"; // Import the compression utility
 
 export default function UploadForm() {
   const [file, setFile] = useState<File | null>(null);
@@ -11,18 +12,39 @@ export default function UploadForm() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [status, setStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
   const [isDragging, setIsDragging] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false); // New state for feedback
 
   // Form Inputs
   const [title, setTitle] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [tags, setTags] = useState(""); // New State for tags
+  const [tags, setTags] = useState("");
 
-  const handleFileSelect = (selectedFile: File) => {
+  const handleFileSelect = async (selectedFile: File) => {
     if (!selectedFile.type.startsWith("image/")) return;
-    setFile(selectedFile);
-    setPreview(URL.createObjectURL(selectedFile));
-    setStatus("idle");
-    setUploadProgress(0);
+
+    setIsCompressing(true); // Start spinner/feedback if you want
+    try {
+        // 1. Generate Preview immediately for better UX
+        const objectUrl = URL.createObjectURL(selectedFile);
+        setPreview(objectUrl);
+
+        // 2. Compress the file in background
+        const compressed = await compressImage(selectedFile);
+        setFile(compressed);
+
+        // Debug log to see savings
+        console.log(`Original: ${(selectedFile.size / 1024 / 1024).toFixed(2)}MB`);
+        console.log(`Compressed: ${(compressed.size / 1024 / 1024).toFixed(2)}MB`);
+
+        setStatus("idle");
+        setUploadProgress(0);
+    } catch (error) {
+        console.error("Compression failed", error);
+        // Fallback to original if compression fails
+        setFile(selectedFile);
+    } finally {
+        setIsCompressing(false);
+    }
   };
 
   const uploadFileWithProgress = (formData: FormData) => {
@@ -60,7 +82,7 @@ export default function UploadForm() {
     formData.append("file", file);
     formData.append("title", title);
     formData.append("prompt", prompt);
-    formData.append("tags", tags); // Append tags
+    formData.append("tags", tags);
 
     try {
       await uploadFileWithProgress(formData);
@@ -71,7 +93,7 @@ export default function UploadForm() {
         setPreview(null);
         setTitle("");
         setPrompt("");
-        setTags(""); // Reset tags
+        setTags("");
         setStatus("idle");
         setUploadProgress(0);
       }, 2000);
@@ -82,7 +104,7 @@ export default function UploadForm() {
     }
   };
 
-  // Drag and Drop handlers...
+  // Drag and Drop handlers
   const onDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
   const onDragLeave = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); };
   const onDrop = (e: React.DragEvent) => {
@@ -134,6 +156,13 @@ export default function UploadForm() {
                 className="relative w-full h-full flex items-center justify-center bg-gray-200 rounded-2xl overflow-hidden shadow-inner group"
               >
                 <img src={preview} alt="Preview" className="w-full h-full object-cover" />
+
+                {isCompressing && (
+                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10">
+                        <span className="text-white font-medium animate-pulse">Compressing...</span>
+                    </div>
+                )}
+
                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
                   <button
                     onClick={() => { setFile(null); setPreview(null); }}
@@ -175,7 +204,7 @@ export default function UploadForm() {
                 </div>
             </div>
 
-             {/* Tags Input (NEW) */}
+             {/* Tags Input */}
              <div className="space-y-2">
                 <label className="text-sm font-semibold text-gray-700 ml-1">Tags (Comma separated)</label>
                 <div className="relative">
@@ -196,7 +225,7 @@ export default function UploadForm() {
             <div className="space-y-2 flex-1 flex flex-col">
                 <label className="text-sm font-semibold text-gray-700 ml-1">AI Prompt</label>
                 <div className="relative flex-1">
-                     <div className="absolute top-3 left-3 pointer-events-none">
+                      <div className="absolute top-3 left-3 pointer-events-none">
                         <FileText className="h-5 w-5 text-gray-400" />
                     </div>
                     <textarea
@@ -208,7 +237,7 @@ export default function UploadForm() {
                 </div>
             </div>
 
-            {/* Submit Button logic (same as before) */}
+            {/* Submit Button */}
             <div className="mt-4">
                 {status === 'uploading' ? (
                     <div className="space-y-2">
@@ -230,10 +259,10 @@ export default function UploadForm() {
                 ) : (
                     <button
                         type="submit"
-                        disabled={!file || !title}
-                        className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-xl ${!file || !title ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "bg-black text-white hover:bg-gray-800 hover:-translate-y-1"}`}
+                        disabled={!file || !title || isCompressing}
+                        className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-xl ${!file || !title || isCompressing ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "bg-black text-white hover:bg-gray-800 hover:-translate-y-1"}`}
                     >
-                        <Upload size={20} /> Publish
+                        <Upload size={20} /> {isCompressing ? "Processing..." : "Publish"}
                     </button>
                 )}
             </div>
