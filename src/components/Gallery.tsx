@@ -246,18 +246,21 @@ export default function Gallery() {
   };
 
   const handleShare = async (photo: IPhoto) => {
+    // 1. Construct the specific URL for this photo
+    const shareUrl = `${window.location.origin}/photo/${photo._id}`;
+
     if (navigator.share) {
       try {
         await navigator.share({
           title: photo.title,
           text: `Check out this AI art: "${photo.prompt}"`,
-          url: window.location.href,
+          url: shareUrl, // <--- Use specific URL
         });
       } catch (err) { console.log(err); }
     } else {
       try {
-        await navigator.clipboard.writeText(photo.imageUrl);
-        setCopied(true); 
+        await navigator.clipboard.writeText(shareUrl); // <--- Copy specific URL
+        setCopied(true);
         setTimeout(() => setCopied(false), 2000);
         alert("Link copied to clipboard!"); 
       } catch (err) { console.error(err); }

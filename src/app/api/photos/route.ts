@@ -1,4 +1,3 @@
-// src/app/api/photos/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import Photo from "@/models/Photo";
@@ -15,54 +14,77 @@ export async function GET(req: NextRequest) {
     const ids = searchParams.get("ids") || "";
 
     const skip = (page - 1) * limit;
-    let query: any = {};
 
-    // 1. Filter by IDs (Favorites)
+    // --- 1. BUILD MATCH QUERY ---
+    let matchStage: any = {};
+
     if (ids) {
       const idArray = ids.split(",").filter((id) => id);
-      query._id = { $in: idArray };
+      // @ts-ignore (ObjectId handling in aggregation)
+      matchStage._id = { $in: idArray.map(id => new (require('mongoose').Types.ObjectId)(id)) };
     }
-    // 2. Filter by Tag
     else if (tag) {
-      query.tags = tag;
+      matchStage.tags = tag;
     }
-    // 3. Filter by Search Text
     else if (search) {
-      query.$or = [
+      matchStage.$or = [
         { title: { $regex: search, $options: "i" } },
         { prompt: { $regex: search, $options: "i" } },
         { tags: { $regex: search, $options: "i" } },
       ];
     }
 
-    let photos;
-    let total;
+    // --- 2. DEFINE "PUSH TO BOTTOM" KEYWORDS ---
+    const buriedKeywords = ["girl", "woman", "female", "lady", "bikini"];
+    const regexPattern = buriedKeywords.join("|");
 
-    // --- LOGIC CHANGE: RANDOM MIX VS SORTED ---
+    // --- 3. AGGREGATION PIPELINE ---
+    // We use aggregation for advanced sorting logic
+    const pipeline = [
+      { $match: matchStage },
+      {
+        $addFields: {
+          // Create a 'sortPriority' field
+          sortPriority: {
+            $cond: {
+              if: {
+                $or: [
+                  { $regexMatch: { input: "$title", regex: regexPattern, options: "i" } },
+                  { $regexMatch: { input: "$prompt", regex: regexPattern, options: "i" } },
+                  // Check if ANY tag matches the pattern
+                  {
+                    $gt: [
+                      {
+                        $size: {
+                          $filter: {
+                            input: "$tags",
+                            as: "t",
+                            cond: { $regexMatch: { input: "$$t", regex: regexPattern, options: "i" } }
+                          }
+                        }
+                      },
+                      0
+                    ]
+                  }
+                ]
+              },
+              then: 2, // "Girl" images get priority 2 (LOWER)
+              else: 1  // Normal images get priority 1 (HIGHER)
+            }
+          }
+        }
+      },
+      // 4. Sort: Priority first (1 then 2), then Random/Newest
+      { $sort: { sortPriority: 1, createdAt: -1 } },
+      { $skip: skip },
+      { $limit: limit }
+    ];
 
-    // Scenario A: User is browsing EVERYTHING (No Search, No Tag, No Favorites)
-    // We use aggregate $sample to give a mix of old and new
-    if (!search && !tag && !ids) {
+    // Get Data
+    const photos = await Photo.aggregate(pipeline);
 
-      // Count total docs for pagination metadata
-      total = await Photo.countDocuments({});
-
-      photos = await Photo.aggregate([
-        { $sample: { size: limit } }, // Randomly pick 'limit' items (Mix of old/new)
-      ]);
-
-      // Note: $sample doesn't strictly support consistent pagination (Page 2 might have repeats),
-      // but it is perfect for an "Explore/Shuffle" feed experience.
-
-    }
-    // Scenario B: User is filtering (Search/Tags) -> Keep strict ordering
-    else {
-      total = await Photo.countDocuments(query);
-      photos = await Photo.find(query)
-        .sort({ createdAt: -1 }) // Newest first for search results
-        .skip(skip)
-        .limit(limit);
-    }
+    // Get Total Count (for pagination)
+    const total = await Photo.countDocuments(matchStage);
 
     return NextResponse.json({
       data: photos,
