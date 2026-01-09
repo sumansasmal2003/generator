@@ -5,7 +5,7 @@ import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { Download, Maximize2, Heart, Share2 } from "lucide-react";
 import { IPhoto } from "@/models/Photo";
-import cloudinaryLoader from "@/lib/cloudinaryLoader";
+import cloudinaryLoader, { getWatermarkedUrl } from "@/lib/cloudinaryLoader";
 
 interface PhotoCardProps {
   photo: IPhoto;
@@ -31,21 +31,24 @@ export default function PhotoCard({ photo, index, isFavorite, onToggleFavorite, 
   };
 
   // --- ACTIONS ---
-  const handleDownload = async (e?: React.MouseEvent) => {
+ const handleDownload = async (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     try {
-      const response = await fetch(photo.imageUrl);
+      // UPDATE: Wrap photo.imageUrl with getWatermarkedUrl()
+      const watermarkedUrl = getWatermarkedUrl(photo.imageUrl);
+
+      const response = await fetch(watermarkedUrl);
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `${photo.title.replace(/\s+/g, '_')}.jpg`;
+      link.download = `${photo.title.replace(/\s+/g, '_')}_watermarked.jpg`; // Optional: Append suffix
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (error) { console.error("Download failed", error); }
-    setShowMenu(false); // Close menu
+    setShowMenu(false);
   };
 
   const handleShare = async (e?: React.MouseEvent) => {

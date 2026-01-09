@@ -4,7 +4,7 @@ import { useState, useRef, MouseEvent } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, Download, Share2, Calendar, Tag, FileText, Check } from "lucide-react";
-import cloudinaryLoader from "@/lib/cloudinaryLoader";
+import cloudinaryLoader, { getWatermarkedUrl } from "@/lib/cloudinaryLoader";
 import { IPhoto } from "@/models/Photo";
 
 // Define the interface for the raw photo data coming from Mongoose lean()
@@ -60,7 +60,10 @@ export default function PhotoDetails({ photo }: PhotoDetailsProps) {
   const handleDownload = async () => {
     setIsDownloading(true);
     try {
-      const response = await fetch(photo.imageUrl);
+      // UPDATE: Wrap photo.imageUrl with getWatermarkedUrl()
+      const watermarkedUrl = getWatermarkedUrl(photo.imageUrl);
+
+      const response = await fetch(watermarkedUrl);
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
