@@ -1,14 +1,35 @@
+// src/app/page.tsx
 import Link from "next/link";
 import Gallery from "@/components/Gallery";
 import { Sparkles, UploadCloud } from "lucide-react";
+import { connectDB } from "@/lib/db";
+import Photo from "@/models/Photo";
 
-export default function Home() {
+// Force dynamic because we are fetching random/latest data
+export const dynamic = "force-dynamic";
+
+async function getInitialPhotos() {
+  await connectDB();
+  // Fetch newest 15 photos, consistent with the API default
+  const photos = await Photo.find({})
+    .sort({ createdAt: -1 })
+    .limit(15)
+    .lean();
+
+  // Serialization: Convert _id and Dates to strings to pass to Client Component
+  return JSON.parse(JSON.stringify(photos));
+}
+
+export default async function Home() {
+  // Fetch data on the server!
+  const initialPhotos = await getInitialPhotos();
+
   return (
     <main className="h-screen w-screen overflow-hidden bg-background text-foreground flex flex-col font-sans relative selection:bg-pink-500/30">
 
       {/* Glassmorphic Header */}
       <header className="flex-none h-16 sm:h-20 bg-white/70 dark:bg-black/70 backdrop-blur-xl z-40 px-4 sm:px-8 lg:px-12 flex items-center justify-between border-b border-gray-200/50 dark:border-white/10 transition-all">
-
+          
           {/* Brand */}
           <div className="flex items-center gap-3 group cursor-pointer">
             <div className="bg-black dark:bg-white text-white dark:text-black p-2.5 rounded-xl shadow-lg group-hover:scale-110 transition-transform duration-300">
@@ -19,7 +40,6 @@ export default function Home() {
 
           {/* Actions */}
           <div className="flex items-center gap-3">
-             {/* Mobile: Icon Only | Desktop: Full Button */}
             <Link
               href="/admin"
               className="group flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white transition-all bg-gray-100/50 dark:bg-white/10 hover:bg-gray-100 dark:hover:bg-white/20 px-3 py-2 sm:px-5 sm:py-2.5 rounded-full border border-transparent hover:border-gray-200 dark:hover:border-white/10"
@@ -30,9 +50,9 @@ export default function Home() {
           </div>
       </header>
 
-      {/* Main Content */}
+      {/* Main Content: Pass initial data prop */}
       <div className="flex-1 relative min-h-0">
-        <Gallery />
+        <Gallery initialPhotos={initialPhotos} />
       </div>
 
     </main>
