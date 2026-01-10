@@ -1,9 +1,10 @@
+// src/components/UploadForm.tsx
 "use client";
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Upload, Check, Image as ImageIcon, Sparkles, Trash2, FileText, Tag } from "lucide-react";
-// Remove compressImage import - we don't need it anymore
+import { compressImage } from "@/lib/compress"; // Ensure you have the updated 9.5MB logic in this file
 
 export default function UploadForm() {
   const [file, setFile] = useState<File | null>(null);
@@ -11,19 +12,41 @@ export default function UploadForm() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [status, setStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
   const [isDragging, setIsDragging] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false); // Feedback for large files
 
   // Form Inputs
   const [title, setTitle] = useState("");
   const [prompt, setPrompt] = useState("");
   const [tags, setTags] = useState("");
 
-  const handleFileSelect = (selectedFile: File) => {
+  const handleFileSelect = async (selectedFile: File) => {
     if (!selectedFile.type.startsWith("image/")) return;
 
-    // No compression logic here!
-    setFile(selectedFile);
+    // 1. Show Preview Immediately
     const objectUrl = URL.createObjectURL(selectedFile);
     setPreview(objectUrl);
+
+    // 2. Check if Compression is needed (Files > 9.5MB)
+    // Cloudinary Free Tier Limit is 10MB. We use 9.5MB as safety buffer.
+    const SAFETY_THRESHOLD = 9.5 * 1024 * 1024;
+
+    if (selectedFile.size > SAFETY_THRESHOLD) {
+        setIsCompressing(true);
+        try {
+            console.log(`File size ${selectedFile.size} exceeds 9.5MB. Compressing...`);
+            const compressed = await compressImage(selectedFile);
+            setFile(compressed);
+            console.log(`Compressed size: ${compressed.size}`);
+        } catch (error) {
+            console.error("Compression failed, using original", error);
+            setFile(selectedFile);
+        } finally {
+            setIsCompressing(false);
+        }
+    } else {
+        // Small file? No compression needed.
+        setFile(selectedFile);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -34,39 +57,47 @@ export default function UploadForm() {
     setUploadProgress(0);
 
     try {
-      // --- STEP 1: Get Signature ---
+      // --- STEP 1: Get Secure Signature from Server ---
       const signRes = await fetch("/api/sign-cloudinary", { method: "POST" });
+      if (!signRes.ok) throw new Error("Failed to get upload signature");
       const { signature, timestamp } = await signRes.json();
 
-      // --- STEP 2: Upload Direct to Cloudinary ---
+      // --- STEP 2: Upload Direct to Cloudinary (Bypassing Vercel Limit) ---
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("api_key", process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY || ""); // Ensure this env var is public
+      formData.append("api_key", process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY || "");
       formData.append("timestamp", timestamp);
       formData.append("signature", signature);
-      formData.append("folder", "generator_app"); // Must match server signature
+      formData.append("folder", "generator_app");
 
-      // Use XHR for progress tracking (fetch doesn't support upload progress yet)
+      // Use XMLHttpRequest to track upload progress
       const cloudRes = await new Promise<any>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
-        xhr.open("POST", `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`);
+        const url = `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`;
+
+        xhr.open("POST", url);
 
         xhr.upload.onprogress = (event) => {
           if (event.lengthComputable) {
-            setUploadProgress(Math.round((event.loaded / event.total) * 100));
+            const percentComplete = (event.loaded / event.total) * 100;
+            setUploadProgress(Math.round(percentComplete));
           }
         };
 
         xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) resolve(JSON.parse(xhr.responseText));
-          else reject(xhr.responseText);
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(JSON.parse(xhr.responseText));
+          } else {
+            reject(xhr.responseText);
+          }
         };
-        xhr.onerror = () => reject("Cloudinary Upload Failed");
+
+        xhr.onerror = () => reject("Network Error during Cloudinary upload");
         xhr.send(formData);
       });
 
-      // --- STEP 3: Save Metadata to Server ---
+      // --- STEP 3: Save Metadata to MongoDB ---
       const saveRes = await fetch("/api/photos/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -82,8 +113,9 @@ export default function UploadForm() {
         }),
       });
 
-      if (!saveRes.ok) throw new Error("Failed to save metadata");
+      if (!saveRes.ok) throw new Error("Failed to save photo metadata");
 
+      // --- Success State ---
       setStatus("success");
       setTimeout(() => {
         setFile(null);
@@ -96,12 +128,12 @@ export default function UploadForm() {
       }, 2000);
 
     } catch (error) {
-      console.error(error);
+      console.error("Upload process failed:", error);
       setStatus("error");
     }
   };
 
-  // Drag and Drop handlers... (keep existing implementations for onDragOver, onDragLeave, onDrop)
+  // Drag and Drop handlers
   const onDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
   const onDragLeave = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); };
   const onDrop = (e: React.DragEvent) => {
@@ -111,8 +143,6 @@ export default function UploadForm() {
   };
 
   return (
-    // ... (Keep your existing JSX return, it works perfectly with this logic)
-    // Make sure to remove any references to "isCompressing" in the JSX
     <div className="max-w-5xl mx-auto bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-100">
       <div className="flex flex-col lg:flex-row min-h-[600px]">
 
@@ -156,14 +186,25 @@ export default function UploadForm() {
               >
                 <img src={preview} alt="Preview" className="w-full h-full object-cover" />
 
-                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
-                  <button
-                    onClick={() => { setFile(null); setPreview(null); }}
-                    className="bg-white text-red-500 p-3 rounded-full hover:bg-red-50 transition transform hover:scale-110 shadow-lg"
-                  >
-                    <Trash2 size={20} />
-                  </button>
-                </div>
+                {/* Compression Feedback Overlay */}
+                {isCompressing && (
+                    <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center z-10 backdrop-blur-sm">
+                        <div className="w-8 h-8 border-4 border-white/30 border-t-white rounded-full animate-spin mb-2" />
+                        <span className="text-white font-medium text-sm">Optimizing...</span>
+                    </div>
+                )}
+
+                {/* Trash Button */}
+                {!isCompressing && (
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
+                    <button
+                        onClick={() => { setFile(null); setPreview(null); }}
+                        className="bg-white text-red-500 p-3 rounded-full hover:bg-red-50 transition transform hover:scale-110 shadow-lg"
+                    >
+                        <Trash2 size={20} />
+                    </button>
+                    </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
@@ -252,10 +293,10 @@ export default function UploadForm() {
                 ) : (
                     <button
                         type="submit"
-                        disabled={!file || !title}
-                        className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-xl ${!file || !title ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "bg-black text-white hover:bg-gray-800 hover:-translate-y-1"}`}
+                        disabled={!file || !title || isCompressing}
+                        className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-xl ${!file || !title || isCompressing ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "bg-black text-white hover:bg-gray-800 hover:-translate-y-1"}`}
                     >
-                        <Upload size={20} /> Publish
+                        <Upload size={20} /> {isCompressing ? "Optimizing..." : "Publish"}
                     </button>
                 )}
             </div>
