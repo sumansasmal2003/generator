@@ -1,10 +1,9 @@
-// src/components/UploadForm.tsx
 "use client";
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Upload, Check, Image as ImageIcon, Sparkles, Trash2, FileText, Tag } from "lucide-react";
-import { compressImage } from "@/lib/compress"; // Import the compression utility
+// Remove compressImage import - we don't need it anymore
 
 export default function UploadForm() {
   const [file, setFile] = useState<File | null>(null);
@@ -12,63 +11,19 @@ export default function UploadForm() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [status, setStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
   const [isDragging, setIsDragging] = useState(false);
-  const [isCompressing, setIsCompressing] = useState(false); // New state for feedback
 
   // Form Inputs
   const [title, setTitle] = useState("");
   const [prompt, setPrompt] = useState("");
   const [tags, setTags] = useState("");
 
-  const handleFileSelect = async (selectedFile: File) => {
+  const handleFileSelect = (selectedFile: File) => {
     if (!selectedFile.type.startsWith("image/")) return;
 
-    setIsCompressing(true); // Start spinner/feedback if you want
-    try {
-        // 1. Generate Preview immediately for better UX
-        const objectUrl = URL.createObjectURL(selectedFile);
-        setPreview(objectUrl);
-
-        // 2. Compress the file in background
-        const compressed = await compressImage(selectedFile);
-        setFile(compressed);
-
-        // Debug log to see savings
-        console.log(`Original: ${(selectedFile.size / 1024 / 1024).toFixed(2)}MB`);
-        console.log(`Compressed: ${(compressed.size / 1024 / 1024).toFixed(2)}MB`);
-
-        setStatus("idle");
-        setUploadProgress(0);
-    } catch (error) {
-        console.error("Compression failed", error);
-        // Fallback to original if compression fails
-        setFile(selectedFile);
-    } finally {
-        setIsCompressing(false);
-    }
-  };
-
-  const uploadFileWithProgress = (formData: FormData) => {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", "/api/photos/upload");
-
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable) {
-          const percentComplete = (event.loaded / event.total) * 100;
-          setUploadProgress(Math.round(percentComplete));
-        }
-      };
-
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(JSON.parse(xhr.responseText));
-        } else {
-          reject(xhr.responseText);
-        }
-      };
-      xhr.onerror = () => reject(xhr.statusText);
-      xhr.send(formData);
-    });
+    // No compression logic here!
+    setFile(selectedFile);
+    const objectUrl = URL.createObjectURL(selectedFile);
+    setPreview(objectUrl);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -78,16 +33,58 @@ export default function UploadForm() {
     setStatus("uploading");
     setUploadProgress(0);
 
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("title", title);
-    formData.append("prompt", prompt);
-    formData.append("tags", tags);
-
     try {
-      await uploadFileWithProgress(formData);
-      setStatus("success");
+      // --- STEP 1: Get Signature ---
+      const signRes = await fetch("/api/sign-cloudinary", { method: "POST" });
+      const { signature, timestamp } = await signRes.json();
 
+      // --- STEP 2: Upload Direct to Cloudinary ---
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("api_key", process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY || ""); // Ensure this env var is public
+      formData.append("timestamp", timestamp);
+      formData.append("signature", signature);
+      formData.append("folder", "generator_app"); // Must match server signature
+
+      // Use XHR for progress tracking (fetch doesn't support upload progress yet)
+      const cloudRes = await new Promise<any>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+        xhr.open("POST", `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`);
+
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            setUploadProgress(Math.round((event.loaded / event.total) * 100));
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve(JSON.parse(xhr.responseText));
+          else reject(xhr.responseText);
+        };
+        xhr.onerror = () => reject("Cloudinary Upload Failed");
+        xhr.send(formData);
+      });
+
+      // --- STEP 3: Save Metadata to Server ---
+      const saveRes = await fetch("/api/photos/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          prompt,
+          tags,
+          imageUrl: cloudRes.secure_url,
+          publicId: cloudRes.public_id,
+          width: cloudRes.width,
+          height: cloudRes.height,
+          format: cloudRes.format,
+        }),
+      });
+
+      if (!saveRes.ok) throw new Error("Failed to save metadata");
+
+      setStatus("success");
       setTimeout(() => {
         setFile(null);
         setPreview(null);
@@ -104,7 +101,7 @@ export default function UploadForm() {
     }
   };
 
-  // Drag and Drop handlers
+  // Drag and Drop handlers... (keep existing implementations for onDragOver, onDragLeave, onDrop)
   const onDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
   const onDragLeave = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); };
   const onDrop = (e: React.DragEvent) => {
@@ -114,6 +111,8 @@ export default function UploadForm() {
   };
 
   return (
+    // ... (Keep your existing JSX return, it works perfectly with this logic)
+    // Make sure to remove any references to "isCompressing" in the JSX
     <div className="max-w-5xl mx-auto bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-100">
       <div className="flex flex-col lg:flex-row min-h-[600px]">
 
@@ -156,12 +155,6 @@ export default function UploadForm() {
                 className="relative w-full h-full flex items-center justify-center bg-gray-200 rounded-2xl overflow-hidden shadow-inner group"
               >
                 <img src={preview} alt="Preview" className="w-full h-full object-cover" />
-
-                {isCompressing && (
-                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10">
-                        <span className="text-white font-medium animate-pulse">Compressing...</span>
-                    </div>
-                )}
 
                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
                   <button
@@ -259,10 +252,10 @@ export default function UploadForm() {
                 ) : (
                     <button
                         type="submit"
-                        disabled={!file || !title || isCompressing}
-                        className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-xl ${!file || !title || isCompressing ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "bg-black text-white hover:bg-gray-800 hover:-translate-y-1"}`}
+                        disabled={!file || !title}
+                        className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-xl ${!file || !title ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "bg-black text-white hover:bg-gray-800 hover:-translate-y-1"}`}
                     >
-                        <Upload size={20} /> {isCompressing ? "Processing..." : "Publish"}
+                        <Upload size={20} /> Publish
                     </button>
                 )}
             </div>
