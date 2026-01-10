@@ -18,6 +18,10 @@ import {
   useQueryClient
 } from "@tanstack/react-query";
 
+interface GalleryProps {
+  initialPhotos?: IPhoto[];
+}
+
 // --- API FETCHERS ---
 const fetchPhotos = async ({ pageParam = 1, queryKey }: any) => {
   const [_, { search, tag, favorites, ids }] = queryKey;
@@ -56,7 +60,7 @@ function useWindowSize() {
 
 interface ITag { _id: string; count: number; }
 
-export default function Gallery() {
+export default function Gallery({ initialPhotos = [] }: GalleryProps) {
   // --- UI STATE ---
   const [selectedTag, setSelectedTag] = useState("");
   const [search, setSearch] = useState("");
@@ -122,6 +126,19 @@ export default function Gallery() {
       return undefined;
     },
     refetchOnWindowFocus: false,
+    initialData: (initialPhotos.length > 0 && !search && !selectedTag && !viewFavorites) ? {
+      pages: [
+        {
+          data: initialPhotos,
+          meta: { 
+            page: 1, 
+            totalPages: 10, // We assume more exist to allow scrolling
+            totalDocs: 100 
+          } 
+        }
+      ],
+      pageParams: [1],
+    } : undefined,
   });
 
   const allPhotos = useMemo(() => {
