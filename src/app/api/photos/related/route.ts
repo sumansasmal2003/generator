@@ -12,7 +12,8 @@ export async function GET(req: NextRequest) {
 
     if (!id) return NextResponse.json({ data: [] });
 
-    let related = [];
+    // FIX: Explicitly type this array as any[] to satisfy TypeScript
+    let related: any[] = [];
 
     // 1. Priority: Match Tags
     if (tagsParam) {
@@ -22,8 +23,8 @@ export async function GET(req: NextRequest) {
                 _id: { $ne: id },   // Exclude current photo
                 tags: { $in: tags } // Match ANY of the tags
             })
-            .limit(6) // Fetch 6 images
-            .sort({ createdAt: -1 }); // Newest first
+            .limit(6)
+            .sort({ createdAt: -1 });
         }
     }
 
@@ -33,7 +34,7 @@ export async function GET(req: NextRequest) {
         const fallback = await Photo.find({ _id: { $nin: excludeIds } })
             .limit(6 - related.length)
             .sort({ createdAt: -1 });
-
+        
         related = [...related, ...fallback];
     }
 

@@ -3,19 +3,19 @@
 
 import { useEffect, useState } from "react";
 import { IPhoto } from "@/models/Photo";
-import { Trash2, Loader2, AlertTriangle } from "lucide-react";
+import { Trash2, Loader2 } from "lucide-react";
 import Image from "next/image";
-import cloudinaryLoader from "@/lib/cloudinaryLoader"; // <--- 1. Import Loader
+import cloudinaryLoader from "@/lib/cloudinaryLoader";
 
 export default function ManagePhotos() {
   const [photos, setPhotos] = useState<IPhoto[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Fetch all photos (simple fetch for management list)
+  // Fetch all photos
   const fetchPhotos = async () => {
     try {
-      const res = await fetch("/api/photos?limit=100"); // Fetching up to 100 for admin view
+      const res = await fetch("/api/photos?limit=100"); 
       const data = await res.json();
       setPhotos(data.data);
     } catch (error) {
@@ -39,8 +39,8 @@ export default function ManagePhotos() {
       });
 
       if (res.ok) {
-        // Remove from local state immediately
-        setPhotos((prev) => prev.filter((p) => (p._id as string) !== id));
+        // FIX: Double cast (unknown -> string) to fix the build error
+        setPhotos((prev) => prev.filter((p) => (p._id as unknown as string) !== id));
       } else {
         alert("Failed to delete");
       }
@@ -74,49 +74,50 @@ export default function ManagePhotos() {
                 </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-                {photos.map((photo) => (
-                    <tr key={photo._id as string} className="hover:bg-gray-50/80 transition-colors">
-                        <td className="px-6 py-4 w-24">
-                            <div className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200 bg-gray-100">
-                                <Image
-                                    loader={cloudinaryLoader} // <--- 2. Use Loader (Vital for list views)
-                                    src={photo.imageUrl}
-                                    alt={photo.title}
-                                    fill
-                                    className="object-cover"
+                {photos.map((photo) => {
+                    // FIX: Create a safe ID string for usage in this loop
+                    const safeId = photo._id as unknown as string;
 
-                                    // <--- 3. Blur Settings
-                                    placeholder={photo.blurDataUrl ? "blur" : "empty"}
-                                    blurDataURL={photo.blurDataUrl}
-
-                                    // <--- 4. Optimization: Only download a tiny thumbnail size
-                                    sizes="64px"
-                                />
-                            </div>
-                        </td>
-                        <td className="px-6 py-4">
-                            <p className="font-semibold text-gray-800">{photo.title}</p>
-                            <p className="text-xs text-gray-400 truncate max-w-xs">{photo.prompt}</p>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-500">
-                            {new Date(photo.createdAt).toLocaleDateString()}
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                            <button
-                                onClick={() => handleDelete(photo._id as string)}
-                                disabled={deletingId === (photo._id as string)}
-                                className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
-                                title="Delete Permanently"
-                            >
-                                {deletingId === (photo._id as string) ? (
-                                    <Loader2 className="animate-spin w-5 h-5" />
-                                ) : (
-                                    <Trash2 className="w-5 h-5" />
-                                )}
-                            </button>
-                        </td>
-                    </tr>
-                ))}
+                    return (
+                        <tr key={safeId} className="hover:bg-gray-50/80 transition-colors">
+                            <td className="px-6 py-4 w-24">
+                                <div className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200 bg-gray-100">
+                                    <Image
+                                        loader={cloudinaryLoader}
+                                        src={photo.imageUrl}
+                                        alt={photo.title}
+                                        fill
+                                        className="object-cover"
+                                        placeholder={photo.blurDataUrl ? "blur" : "empty"}
+                                        blurDataURL={photo.blurDataUrl}
+                                        sizes="64px" 
+                                    />
+                                </div>
+                            </td>
+                            <td className="px-6 py-4">
+                                <p className="font-semibold text-gray-800">{photo.title}</p>
+                                <p className="text-xs text-gray-400 truncate max-w-xs">{photo.prompt}</p>
+                            </td>
+                            <td className="px-6 py-4 text-sm text-gray-500">
+                                {new Date(photo.createdAt).toLocaleDateString()}
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                                <button
+                                    onClick={() => handleDelete(safeId)}
+                                    disabled={deletingId === safeId}
+                                    className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                                    title="Delete Permanently"
+                                >
+                                    {deletingId === safeId ? (
+                                        <Loader2 className="animate-spin w-5 h-5" />
+                                    ) : (
+                                        <Trash2 className="w-5 h-5" />
+                                    )}
+                                </button>
+                            </td>
+                        </tr>
+                    );
+                })}
                 {photos.length === 0 && (
                     <tr>
                         <td colSpan={4} className="px-6 py-12 text-center text-gray-400">

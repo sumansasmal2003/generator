@@ -11,9 +11,9 @@ import Image from "next/image";
 import cloudinaryLoader from "@/lib/cloudinaryLoader";
 import ColorThief from "colorthief";
 
-interface ITag {
-  _id: string;
-  count: number;
+interface ITag { 
+  _id: string; 
+  count: number; 
 }
 
 export default function Gallery() {
@@ -36,7 +36,7 @@ export default function Gallery() {
   const [copied, setCopied] = useState(false);
   const [copiedColor, setCopiedColor] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
-
+  
   // Custom Context Menu State
   const [contextMenu, setContextMenu] = useState<{ show: boolean; x: number; y: number } | null>(null);
 
@@ -45,7 +45,7 @@ export default function Gallery() {
   const [selectedTag, setSelectedTag] = useState("");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-
+  
   // Favorites
   const [favorites, setFavorites] = useState<string[]>([]);
   const [viewFavorites, setViewFavorites] = useState(false);
@@ -96,15 +96,15 @@ export default function Gallery() {
       setLoading(true);
       try {
         let url = `/api/photos?page=${page}&limit=${ITEMS_PER_PAGE}`;
-
+        
         if (viewFavorites) {
             if (favorites.length === 0) {
-                setPhotos([]);
-                setLoading(false);
+                setPhotos([]); 
+                setLoading(false); 
                 return;
             }
             url += `&ids=${favorites.join(",")}`;
-        }
+        } 
         else {
             if (selectedTag) url += `&tag=${encodeURIComponent(selectedTag)}`;
             else if (debouncedSearch) url += `&search=${encodeURIComponent(debouncedSearch)}`;
@@ -114,7 +114,7 @@ export default function Gallery() {
         const data = await res.json();
         setPhotos(data.data);
         setTotalPages(data.meta.totalPages);
-
+        
         if (page > 1 && scrollContainerRef.current) {
             scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
         }
@@ -262,7 +262,7 @@ export default function Gallery() {
         await navigator.clipboard.writeText(shareUrl); // <--- Copy specific URL
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
-        alert("Link copied to clipboard!");
+        alert("Link copied to clipboard!"); 
       } catch (err) { console.error(err); }
     }
   };
@@ -276,10 +276,10 @@ export default function Gallery() {
   return (
     <div className="h-full relative flex flex-col">
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto custom-scrollbar pb-32">
-
+        
         {/* HERO */}
         <div className="max-w-7xl mx-auto px-6 lg:px-12 pt-16 pb-8">
-            <motion.div
+            <motion.div 
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="text-center max-w-2xl mx-auto space-y-6"
@@ -319,7 +319,7 @@ export default function Gallery() {
                     }}
                     className={`px-4 py-1.5 rounded-full text-sm font-bold transition-all border flex items-center gap-2
                         ${viewFavorites
-                            ? "bg-red-500 text-white border-red-500 shadow-md transform scale-105"
+                            ? "bg-red-500 text-white border-red-500 shadow-md transform scale-105" 
                             : "bg-white text-gray-600 border-gray-200 hover:border-red-300 hover:text-red-500"}
                     `}
                 >
@@ -340,8 +340,8 @@ export default function Gallery() {
                             setPage(1);
                         }}
                         className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all border
-                            ${selectedTag === tag._id
-                                ? "bg-black text-white border-black shadow-md transform scale-105"
+                            ${selectedTag === tag._id 
+                                ? "bg-black text-white border-black shadow-md transform scale-105" 
                                 : "bg-white text-gray-600 border-gray-200 hover:border-gray-400 hover:bg-gray-50"}
                         `}
                     >
@@ -423,7 +423,7 @@ export default function Gallery() {
                  className="basis-[40%] min-h-[250px] lg:basis-3/4 bg-gray-100 flex items-center justify-center relative overflow-hidden cursor-context-menu flex-shrink-0"
                  onContextMenu={handleModalContextMenu}
                >
-                 <div
+                 <div 
                     className="absolute inset-0 z-0 opacity-50"
                     style={{
                         backgroundImage: selectedPhoto.blurDataUrl ? `url("${selectedPhoto.blurDataUrl}")` : undefined,
@@ -434,11 +434,11 @@ export default function Gallery() {
                     }}
                  />
                  <div className="relative w-full h-full z-10 p-4 lg:p-12">
-                    <Image
+                    <Image 
                         loader={cloudinaryLoader}
-                        src={selectedPhoto.imageUrl}
-                        alt={selectedPhoto.title}
-                        fill
+                        src={selectedPhoto.imageUrl} 
+                        alt={selectedPhoto.title} 
+                        fill 
                         placeholder={selectedPhoto.blurDataUrl ? "blur" : "empty"}
                         blurDataURL={selectedPhoto.blurDataUrl}
                         className="object-contain drop-shadow-2xl"
@@ -585,14 +585,14 @@ export default function Gallery() {
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 transition={{ duration: 0.1 }}
-                style={{
-                    position: 'fixed',
-                    top: contextMenu.y,
+                style={{ 
+                    position: 'fixed', 
+                    top: contextMenu.y, 
                     left: contextMenu.x,
-                    zIndex: 9999
+                    zIndex: 9999 
                 }}
                 className="bg-white/95 backdrop-blur-xl border border-gray-100 rounded-xl shadow-2xl p-1.5 min-w-[180px] flex flex-col gap-1 overflow-hidden"
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()} 
             >
                 <button
                     onClick={(e) => {
