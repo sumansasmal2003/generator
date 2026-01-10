@@ -11,28 +11,50 @@ interface Props {
   params: Promise<{ id: string }>;
 }
 
+const getBaseUrl = () => {
+  if (process.env.NEXT_PUBLIC_URL) return process.env.NEXT_PUBLIC_URL;
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return 'http://localhost:3000';
+};
+
 // 1. DYNAMIC METADATA (SEO & Social Cards)
 // ... (This part remains exactly the same as before) ...
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
+
   await connectDB();
   const photo = await Photo.findById(id);
 
-  if (!photo) return { title: "Photo Not Found" };
+  if (!photo) {
+    return { title: "Photo Not Found" };
+  }
+
+  // Construct Dynamic OG Image URL
+  const ogUrl = new URL(`${getBaseUrl()}/api/og`);
+  ogUrl.searchParams.set("title", photo.title);
+  ogUrl.searchParams.set("prompt", photo.prompt);
+  ogUrl.searchParams.set("imageUrl", photo.imageUrl);
 
   return {
-    title: `${photo.title} | AI Gallery`,
-    description: photo.prompt || "AI Generated Artwork",
+    title: `${photo.title} | AI Generator`,
+    description: `Generated with prompt: ${photo.prompt}`,
     openGraph: {
       title: photo.title,
-      description: photo.prompt,
-      images: [photo.imageUrl],
+      description: `AI Generated Art: ${photo.prompt}`,
+      images: [
+        {
+          url: ogUrl.toString(),
+          width: 1200,
+          height: 630,
+          alt: photo.title,
+        },
+      ],
     },
     twitter: {
       card: "summary_large_image",
       title: photo.title,
       description: photo.prompt,
-      images: [photo.imageUrl],
+      images: [ogUrl.toString()],
     },
   };
 }
