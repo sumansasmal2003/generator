@@ -8,6 +8,9 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "AI Art Generator",
   description: "Generate and explore AI art.",
+  verification: {
+    google: 'JaNXzE5jqyULpOXuOnsk3Ou9E89Q50AR4yDPjZ73zSM',
+  },
 };
 
 export default function RootLayout({
