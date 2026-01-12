@@ -65,7 +65,8 @@ export default function ConfirmationModal({
                     </p>
                     <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
                       {items.slice(0, 5).map((item) => (
-                        <div key={item._id as string} className="relative w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden border border-gray-200">
+                        // FIX: Use 'as unknown as string' to handle ObjectId conversion
+                        <div key={item._id as unknown as string} className="relative w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden border border-gray-200">
                           <Image
                             loader={cloudinaryLoader}
                             src={item.imageUrl}
@@ -102,8 +103,8 @@ export default function ConfirmationModal({
                 </div>
               </div>
             </div>
-
-            <button
+            
+            <button 
               onClick={onClose}
               className="absolute top-4 right-4 text-gray-400 hover:text-black dark:hover:text-white transition-colors"
             >
