@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Download, Maximize2, Heart, Share2 } from "lucide-react";
 import { IPhoto } from "@/models/Photo";
 import cloudinaryLoader, { getWatermarkedUrl } from "@/lib/cloudinaryLoader";
+import { toast } from "sonner"; // Assuming sonner was installed in previous steps
 
 interface PhotoCardProps {
   photo: IPhoto;
@@ -45,7 +46,11 @@ export default function PhotoCard({ photo, index, isFavorite, onToggleFavorite, 
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-    } catch (error) { console.error("Download failed", error); }
+      toast.success("Download started");
+    } catch (error) {
+      console.error("Download failed", error);
+      toast.error("Download failed");
+    }
     setShowMenu(false);
   };
 
@@ -61,7 +66,7 @@ export default function PhotoCard({ photo, index, isFavorite, onToggleFavorite, 
         } catch (err) { console.log(err); }
     } else {
         await navigator.clipboard.writeText(photo.imageUrl);
-        alert("Link copied!");
+        toast.success("Link copied!");
     }
     setShowMenu(false);
   };
@@ -84,6 +89,8 @@ export default function PhotoCard({ photo, index, isFavorite, onToggleFavorite, 
   }, []);
 
   const safeId = photo._id as unknown as string;
+  // Calculate aspect ratio for the placeholder container
+  const aspectRatio = (photo.width && photo.height) ? photo.width / photo.height : 1;
 
   return (
     <>
@@ -99,10 +106,15 @@ export default function PhotoCard({ photo, index, isFavorite, onToggleFavorite, 
       {/* VIEW TRANSITION API (Shared Element)
         Wrapping Image + Blur in a layoutId container
       */}
-      <motion.div layoutId={`image-container-${safeId}`} className="relative">
-          {/* BLURRY BACKGROUND */}
+      <motion.div
+        layoutId={`image-container-${safeId}`}
+        className="relative w-full bg-gray-200 dark:bg-gray-800"
+        // Apply explicit aspect ratio to prevent layout shift
+        style={{ aspectRatio: aspectRatio }}
+      >
+          {/* BLURRY BACKGROUND - Fades out when image loads */}
           <div
-            className="absolute inset-0 z-0 bg-gray-200 dark:bg-gray-800"
+            className={`absolute inset-0 z-0 bg-gray-200 dark:bg-gray-800 transition-opacity duration-700 ${isLoading ? 'opacity-100' : 'opacity-0'}`}
             style={{
                 backgroundImage: photo.blurDataUrl ? `url("${photo.blurDataUrl}")` : undefined,
                 backgroundSize: 'cover',
@@ -112,7 +124,7 @@ export default function PhotoCard({ photo, index, isFavorite, onToggleFavorite, 
             }}
           />
 
-          {/* MAIN IMAGE */}
+          {/* MAIN IMAGE - PROGRESSIVE LOADING */}
           <Image
             key={retryKey}
             loader={cloudinaryLoader}
@@ -121,9 +133,12 @@ export default function PhotoCard({ photo, index, isFavorite, onToggleFavorite, 
             width={photo.width || 800}
             height={photo.height || 600}
             priority={index < 4}
+            // "empty" placeholder because we handle it manually with blurDataUrl div
             placeholder="empty"
-            className={`relative z-10 w-full h-auto object-cover transition-opacity duration-700 ease-out ${
-                isLoading || hasError ? 'opacity-0' : 'opacity-100'
+            className={`relative z-10 w-full h-full object-cover transition-all duration-500 ease-out will-change-transform ${
+                isLoading || hasError
+                  ? 'opacity-0 scale-110' // Start zoomed in and invisible
+                  : 'opacity-100 scale-100' // Settle to normal size and visible
             }`}
             onLoad={handleImageLoad}
             onError={handleImageError}
@@ -131,7 +146,7 @@ export default function PhotoCard({ photo, index, isFavorite, onToggleFavorite, 
           />
       </motion.div>
 
-      {/* OVERLAYS (Title, Buttons) - These fade in/out, they don't morph */}
+      {/* OVERLAYS (Title, Buttons) */}
       <button
         onClick={(e) => { e.stopPropagation(); onToggleFavorite(e); }}
         className="absolute top-3 right-3 z-30 p-2 rounded-full bg-black/20 backdrop-blur-md hover:bg-black/40 transition-colors group-hover:opacity-100 opacity-0 md:opacity-0"

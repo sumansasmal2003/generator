@@ -5,6 +5,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, Download, Share2, Calendar, Tag, FileText, Check, X } from "lucide-react";
 import cloudinaryLoader, { getWatermarkedUrl } from "@/lib/cloudinaryLoader";
+import { toast } from "sonner";
+import { motion, AnimatePresence, PanInfo } from "framer-motion"; // Import framer-motion
 
 interface PhotoData {
     _id: string;
@@ -54,6 +56,7 @@ export default function PhotoDetails({ photo }: PhotoDetailsProps) {
   // --- ACTION HANDLERS ---
   const handleDownload = async () => {
     setIsDownloading(true);
+    toast.success("Download started");
     try {
       const watermarkedUrl = getWatermarkedUrl(photo.imageUrl);
       const response = await fetch(watermarkedUrl);
@@ -66,7 +69,10 @@ export default function PhotoDetails({ photo }: PhotoDetailsProps) {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-    } catch (error) { console.error("Download failed", error); alert("Failed to download image."); }
+    } catch (error) {
+        console.error("Download failed", error);
+        toast.error("Failed to download image.");
+    }
     finally { setIsDownloading(false); }
   };
 
@@ -84,8 +90,9 @@ export default function PhotoDetails({ photo }: PhotoDetailsProps) {
       try {
         await navigator.clipboard.writeText(shareUrl);
         setCopiedLink(true);
+        toast.success("Link copied to clipboard");
         setTimeout(() => setCopiedLink(false), 2000);
-      } catch (err) { console.error(err); }
+      } catch (err) { console.error(err); toast.error("Failed to copy link"); }
     }
   };
 
@@ -176,15 +183,60 @@ export default function PhotoDetails({ photo }: PhotoDetailsProps) {
         </div>
       </main>
 
-      {/* NEW: Mobile Lightbox Overlay */}
-      {isLightboxOpen && (
-        <div className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-xl flex items-center justify-center p-2" onClick={() => setLightboxOpen(false)}>
-            <div className="relative w-full h-full max-w-4xl max-h-screen">
-                <Image loader={cloudinaryLoader} src={photo.imageUrl} alt={photo.title} fill className="object-contain" />
-            </div>
-            <button className="absolute top-6 right-6 text-white bg-white/10 p-3 rounded-full hover:bg-white/20 transition"><X size={24} /></button>
-        </div>
-      )}
+      {/* NEW: Mobile Lightbox Overlay with Swipe-to-Close */}
+      <AnimatePresence>
+        {isLightboxOpen && (
+            <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-xl flex items-center justify-center p-0 sm:p-2"
+                onClick={() => setLightboxOpen(false)}
+            >
+                {/* Drag Hint (Visual Cue) */}
+                <div className="sm:hidden absolute top-4 left-1/2 -translate-x-1/2 w-12 h-1.5 bg-white/20 rounded-full z-20 pointer-events-none" />
+
+                {/* Draggable Image Container */}
+                <motion.div
+                    className="relative w-full h-full max-w-4xl max-h-screen flex items-center justify-center"
+                    onClick={(e) => e.stopPropagation()} // Prevent accidental closes when tapping image
+                    drag="y"
+                    dragConstraints={{ top: 0, bottom: 0 }} // Elastic snap-back
+                    dragElastic={0.7}
+                    onDragEnd={(e, info: PanInfo) => {
+                        // Close if dragged down significantly (150px) or with speed
+                        if (info.offset.y > 150 || info.velocity.y > 200) {
+                            setLightboxOpen(false);
+                        }
+                    }}
+                >
+                    <Image
+                        loader={cloudinaryLoader}
+                        src={photo.imageUrl}
+                        alt={photo.title}
+                        fill
+                        className="object-contain pointer-events-none select-none" // Prevent browser default drag/selection
+                    />
+                </motion.div>
+
+                {/* Desktop Close Button (Top Right) */}
+                <button
+                    className="hidden sm:block absolute top-6 right-6 text-white bg-white/10 p-3 rounded-full hover:bg-white/20 transition z-50"
+                    onClick={(e) => { e.stopPropagation(); setLightboxOpen(false); }}
+                >
+                    <X size={24} />
+                </button>
+
+                {/* Mobile Close Button (Bottom Center Floating) */}
+                <button
+                    className="sm:hidden fixed bottom-8 left-1/2 -translate-x-1/2 text-white bg-white/15 backdrop-blur-md p-4 rounded-full active:scale-95 transition z-50 border border-white/10 shadow-2xl"
+                    onClick={(e) => { e.stopPropagation(); setLightboxOpen(false); }}
+                >
+                    <X size={24} />
+                </button>
+            </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

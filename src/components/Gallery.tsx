@@ -73,6 +73,11 @@ export default function Gallery() {
   const [copied, setCopied] = useState(false);
   const [copiedColor, setCopiedColor] = useState<string | null>(null);
 
+  // --- NEW: Scroll State for Tags ---
+  const tagsContainerRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
 
@@ -98,6 +103,32 @@ export default function Gallery() {
     staleTime: 1000 * 60 * 5,
   });
   const availableTags: ITag[] = tagsData || [];
+
+  // --- NEW: Check Scroll Position Logic ---
+  const checkScroll = useCallback(() => {
+    if (tagsContainerRef.current) {
+      const { scrollLeft, scrollWidth, clientWidth } = tagsContainerRef.current;
+      setCanScrollLeft(scrollLeft > 0);
+      // Use a small buffer (1px) for floating point errors
+      setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 1);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkScroll();
+    window.addEventListener("resize", checkScroll);
+    return () => window.removeEventListener("resize", checkScroll);
+  }, [availableTags, checkScroll]);
+
+  const scrollTags = (direction: "left" | "right") => {
+    if (tagsContainerRef.current) {
+      const scrollAmount = 300;
+      tagsContainerRef.current.scrollBy({
+        left: direction === "left" ? -scrollAmount : scrollAmount,
+        behavior: "smooth",
+      });
+    }
+  };
 
   const {
     data,
@@ -303,13 +334,53 @@ export default function Gallery() {
             </motion.div>
         </div>
 
-        {/* TABS */}
-        <div className="max-w-7xl mx-auto px-6 lg:px-12 mb-8">
-            <div className="flex flex-nowrap sm:flex-wrap items-center sm:justify-center gap-2 overflow-x-auto pb-4 sm:pb-0 -mx-6 px-6 sm:mx-0 sm:px-0 scrollbar-hide snap-x">
+        {/* TABS (Enhanced with Scroll Buttons and Fade) */}
+        <div className="max-w-7xl mx-auto px-6 lg:px-12 mb-8 relative group">
+
+            {/* Scroll Left Button */}
+            <AnimatePresence>
+                {canScrollLeft && (
+                    <motion.button
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -10 }}
+                        onClick={() => scrollTags("left")}
+                        className="hidden md:flex absolute left-0 top-1/2 -translate-y-1/2 z-20 -ml-4 w-10 h-10 items-center justify-center bg-white dark:bg-gray-800 rounded-full shadow-lg border border-gray-100 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:scale-110 transition-transform"
+                    >
+                        <ChevronLeft size={20} />
+                    </motion.button>
+                )}
+            </AnimatePresence>
+
+            {/* Scroll Right Button */}
+            <AnimatePresence>
+                {canScrollRight && (
+                    <motion.button
+                        initial={{ opacity: 0, x: 10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 10 }}
+                        onClick={() => scrollTags("right")}
+                        className="hidden md:flex absolute right-0 top-1/2 -translate-y-1/2 z-20 -mr-4 w-10 h-10 items-center justify-center bg-white dark:bg-gray-800 rounded-full shadow-lg border border-gray-100 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:scale-110 transition-transform"
+                    >
+                        <ChevronRight size={20} />
+                    </motion.button>
+                )}
+            </AnimatePresence>
+
+            {/* Scroll Container */}
+            <div
+                ref={tagsContainerRef}
+                onScroll={checkScroll}
+                className="flex flex-nowrap items-center gap-2 overflow-x-auto pb-4 sm:pb-0 -mx-6 px-6 sm:mx-0 sm:px-0 scrollbar-hide snap-x relative"
+                style={{
+                    maskImage: `linear-gradient(to right, ${canScrollLeft ? 'transparent, black 40px' : 'black 0%'}, black 90%, ${canScrollRight ? 'transparent' : 'black 100%'})`,
+                    WebkitMaskImage: `linear-gradient(to right, ${canScrollLeft ? 'transparent, black 40px' : 'black 0%'}, black 90%, ${canScrollRight ? 'transparent' : 'black 100%'})`
+                }}
+            >
                 <button onClick={() => { setViewFavorites(!viewFavorites); setSelectedTag(""); setSearch(""); }} className={`flex-shrink-0 snap-start px-4 py-2 rounded-full text-sm font-bold transition-all border flex items-center gap-2 ${viewFavorites ? "bg-red-500 text-white border-red-500 shadow-md" : "bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700"}`}>
                     <Heart size={14} className={viewFavorites ? "fill-white" : ""} /> Saved <span className="opacity-70 text-xs ml-1">{favorites.length}</span>
                 </button>
-                <div className="w-px h-6 bg-gray-300 dark:bg-gray-700 mx-1 hidden sm:block" />
+                <div className="w-px h-6 bg-gray-300 dark:bg-gray-700 mx-1 flex-shrink-0" />
                 {availableTags.map((tag) => (
                     <button key={tag._id} onClick={() => { selectedTag === tag._id ? setSelectedTag("") : setSelectedTag(tag._id); setViewFavorites(false); setSearch(""); }} className={`flex-shrink-0 snap-start px-4 py-2 rounded-full text-sm font-medium transition-all border whitespace-nowrap ${selectedTag === tag._id ? "bg-black dark:bg-white text-white dark:text-black" : "bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm text-gray-600 dark:text-gray-300 border-gray-200"}`}>
                         {tag._id}
