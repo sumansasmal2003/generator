@@ -3,8 +3,9 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Upload, Check, Image as ImageIcon, Sparkles, Trash2, FileText, Tag } from "lucide-react";
-import { compressImage } from "@/lib/compress"; // Ensure you have the updated 9.5MB logic in this file
+import { Upload, Check, Image as ImageIcon, Sparkles, Trash2, FileText, Tag, X } from "lucide-react";
+import { compressImage } from "@/lib/compress";
+import { toast } from "sonner";
 
 export default function UploadForm() {
   const [file, setFile] = useState<File | null>(null);
@@ -12,41 +13,64 @@ export default function UploadForm() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [status, setStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
   const [isDragging, setIsDragging] = useState(false);
-  const [isCompressing, setIsCompressing] = useState(false); // Feedback for large files
+  const [isCompressing, setIsCompressing] = useState(false);
 
   // Form Inputs
   const [title, setTitle] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [tags, setTags] = useState("");
+  // CHANGED: Tags are now an array of strings
+  const [tags, setTags] = useState<string[]>([]);
+  // NEW: State for the current tag being typed
+  const [tagInput, setTagInput] = useState("");
 
   const handleFileSelect = async (selectedFile: File) => {
-    if (!selectedFile.type.startsWith("image/")) return;
+    if (!selectedFile.type.startsWith("image/")) {
+        toast.error("Please select a valid image file");
+        return;
+    }
 
-    // 1. Show Preview Immediately
     const objectUrl = URL.createObjectURL(selectedFile);
     setPreview(objectUrl);
 
-    // 2. Check if Compression is needed (Files > 9.5MB)
-    // Cloudinary Free Tier Limit is 10MB. We use 9.5MB as safety buffer.
     const SAFETY_THRESHOLD = 9.5 * 1024 * 1024;
 
     if (selectedFile.size > SAFETY_THRESHOLD) {
         setIsCompressing(true);
+        // Show optimization toast
+        const toastId = toast.loading("Optimizing large image...");
         try {
             console.log(`File size ${selectedFile.size} exceeds 9.5MB. Compressing...`);
             const compressed = await compressImage(selectedFile);
             setFile(compressed);
-            console.log(`Compressed size: ${compressed.size}`);
+            toast.success("Image optimized!", { id: toastId }); // Update toast
         } catch (error) {
             console.error("Compression failed, using original", error);
             setFile(selectedFile);
+            toast.error("Optimization failed, using original", { id: toastId });
         } finally {
             setIsCompressing(false);
         }
     } else {
-        // Small file? No compression needed.
         setFile(selectedFile);
     }
+  };
+
+  // NEW: Handler for adding tags
+  const handleTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      const newTag = tagInput.trim().replace(/,/g, '');
+      if (newTag && !tags.includes(newTag)) {
+        setTags([...tags, newTag]);
+        setTagInput("");
+      }
+    } else if (e.key === 'Backspace' && !tagInput && tags.length > 0) {
+      setTags(tags.slice(0, -1));
+    }
+  };
+
+  const removeTag = (tagToRemove: string) => {
+    setTags(tags.filter(tag => tag !== tagToRemove));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -56,13 +80,16 @@ export default function UploadForm() {
     setStatus("uploading");
     setUploadProgress(0);
 
+    // Start persistent loading toast
+    const toastId = toast.loading("Starting upload...");
+
     try {
-      // --- STEP 1: Get Secure Signature from Server ---
+      // --- STEP 1: Get Secure Signature ---
       const signRes = await fetch("/api/sign-cloudinary", { method: "POST" });
       if (!signRes.ok) throw new Error("Failed to get upload signature");
       const { signature, timestamp } = await signRes.json();
 
-      // --- STEP 2: Upload Direct to Cloudinary (Bypassing Vercel Limit) ---
+      // --- STEP 2: Upload to Cloudinary ---
       const formData = new FormData();
       formData.append("file", file);
       formData.append("api_key", process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY || "");
@@ -70,7 +97,6 @@ export default function UploadForm() {
       formData.append("signature", signature);
       formData.append("folder", "generator_app");
 
-      // Use XMLHttpRequest to track upload progress
       const cloudRes = await new Promise<any>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
@@ -82,6 +108,8 @@ export default function UploadForm() {
           if (event.lengthComputable) {
             const percentComplete = (event.loaded / event.total) * 100;
             setUploadProgress(Math.round(percentComplete));
+            // Optional: Update toast text with percentage if desired
+            toast.loading(`Uploading... ${Math.round(percentComplete)}%`, { id: toastId });
           }
         };
 
@@ -97,14 +125,14 @@ export default function UploadForm() {
         xhr.send(formData);
       });
 
-      // --- STEP 3: Save Metadata to MongoDB ---
+      // --- STEP 3: Save Metadata ---
       const saveRes = await fetch("/api/photos/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title,
           prompt,
-          tags,
+          tags: tags.join(","),
           imageUrl: cloudRes.secure_url,
           publicId: cloudRes.public_id,
           width: cloudRes.width,
@@ -117,12 +145,16 @@ export default function UploadForm() {
 
       // --- Success State ---
       setStatus("success");
+      // Update the persistent toast to success (Green)
+      toast.success("Upload complete!", { id: toastId });
+
       setTimeout(() => {
         setFile(null);
         setPreview(null);
         setTitle("");
         setPrompt("");
-        setTags("");
+        setTags([]);
+        setTagInput("");
         setStatus("idle");
         setUploadProgress(0);
       }, 2000);
@@ -130,10 +162,11 @@ export default function UploadForm() {
     } catch (error) {
       console.error("Upload process failed:", error);
       setStatus("error");
+      // Update the persistent toast to error (Red)
+      toast.error("Upload failed. Please try again.", { id: toastId });
     }
   };
 
-  // Drag and Drop handlers
   const onDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
   const onDragLeave = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); };
   const onDrop = (e: React.DragEvent) => {
@@ -238,21 +271,52 @@ export default function UploadForm() {
                 </div>
             </div>
 
-             {/* Tags Input */}
-             <div className="space-y-2">
-                <label className="text-sm font-semibold text-gray-700 ml-1">Tags (Comma separated)</label>
-                <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <Tag className="h-5 w-5 text-gray-400" />
+            {/* NEW: Tags Input (Chip/Pill Style) */}
+            <div className="space-y-2">
+                <label className="text-sm font-semibold text-gray-700 ml-1">Tags</label>
+                <div
+                  className="min-h-[52px] p-2 bg-gray-50 border border-gray-200 rounded-xl focus-within:ring-2 focus-within:ring-black focus-within:border-transparent transition-all flex flex-wrap gap-2 items-center"
+                  onClick={() => document.getElementById("tag-input")?.focus()} // Click container to focus input
+                >
+                    {/* Icon */}
+                    <div className="pl-1 text-gray-400">
+                        <Tag className="h-5 w-5" />
                     </div>
+
+                    {/* Chips */}
+                    <AnimatePresence>
+                        {tags.map(tag => (
+                            <motion.span
+                                key={tag}
+                                initial={{ opacity: 0, scale: 0.8 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.8 }}
+                                className="px-3 py-1 bg-white border border-gray-200 rounded-full text-sm text-gray-700 flex items-center gap-1 shadow-sm font-medium"
+                            >
+                                {tag}
+                                <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); removeTag(tag); }}
+                                    className="text-gray-400 hover:text-red-500 transition-colors p-0.5"
+                                >
+                                    <X size={14} />
+                                </button>
+                            </motion.span>
+                        ))}
+                    </AnimatePresence>
+
+                    {/* Interactive Input */}
                     <input
+                        id="tag-input"
                         type="text"
-                        value={tags}
-                        onChange={(e) => setTags(e.target.value)}
-                        placeholder="e.g. cyberpunk, nature, blue"
-                        className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-black focus:border-transparent outline-none transition-all"
+                        value={tagInput}
+                        onChange={(e) => setTagInput(e.target.value)}
+                        onKeyDown={handleTagKeyDown}
+                        placeholder={tags.length === 0 ? "Type tag & hit Enter..." : "Add..."}
+                        className="flex-1 bg-transparent border-none outline-none text-gray-800 placeholder-gray-400 min-w-[120px] py-1 text-sm"
                     />
                 </div>
+                <p className="text-xs text-gray-500 ml-1">Press <b>Enter</b> or <b>Comma</b> to add a tag.</p>
             </div>
 
             {/* Prompt */}
@@ -273,33 +337,34 @@ export default function UploadForm() {
 
             {/* Submit Button */}
             <div className="mt-4">
-                {status === 'uploading' ? (
-                    <div className="space-y-2">
-                        <div className="flex justify-between text-sm font-medium text-gray-700">
-                            <span>Uploading...</span><span>{uploadProgress}%</span>
-                        </div>
-                        <div className="h-4 w-full bg-gray-100 rounded-full overflow-hidden">
-                            <motion.div
-                                className="h-full bg-black rounded-full"
-                                initial={{ width: 0 }}
-                                animate={{ width: `${uploadProgress}%` }}
-                            />
-                        </div>
-                    </div>
-                ) : status === 'success' ? (
-                     <motion.button disabled initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="w-full py-4 bg-green-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg">
-                        <Check size={20} /> Upload Complete!
-                    </motion.button>
-                ) : (
-                    <button
-                        type="submit"
-                        disabled={!file || !title || isCompressing}
-                        className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-xl ${!file || !title || isCompressing ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "bg-black text-white hover:bg-gray-800 hover:-translate-y-1"}`}
-                    >
-                        <Upload size={20} /> {isCompressing ? "Optimizing..." : "Publish"}
-                    </button>
-                )}
-            </div>
+             {/* We can keep this UI feedback as it's very clear, but now we have Toasts too */}
+             {status === 'uploading' ? (
+                 <div className="space-y-2">
+                     <div className="flex justify-between text-sm font-medium text-gray-700">
+                         <span>Uploading...</span><span>{uploadProgress}%</span>
+                     </div>
+                     <div className="h-4 w-full bg-gray-100 rounded-full overflow-hidden">
+                         <motion.div
+                             className="h-full bg-black rounded-full"
+                             initial={{ width: 0 }}
+                             animate={{ width: `${uploadProgress}%` }}
+                         />
+                     </div>
+                 </div>
+             ) : status === 'success' ? (
+                  <motion.button disabled initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="w-full py-4 bg-green-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg">
+                     <Check size={20} /> Upload Complete!
+                 </motion.button>
+             ) : (
+                 <button
+                     type="submit"
+                     disabled={!file || !title || isCompressing}
+                     className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-xl ${!file || !title || isCompressing ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "bg-black text-white hover:bg-gray-800 hover:-translate-y-1"}`}
+                 >
+                     <Upload size={20} /> {isCompressing ? "Optimizing..." : "Publish"}
+                 </button>
+             )}
+         </div>
 
           </form>
         </div>
